@@ -1,0 +1,24 @@
+# Root-level ignores for the entire repo
+**/node_modules
+**/.next
+**/out
+**/build
+**/dist
+**/.turbo
+**/.vercel
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS files
+.DS_Store
+
+# Env files
+.env*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts 
