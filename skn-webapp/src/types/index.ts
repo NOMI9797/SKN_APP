@@ -23,6 +23,17 @@ export interface User {
   lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;
+  
+  // Binary tree structure fields
+  parentId?: string;
+  side?: 'left' | 'right';
+  leftChildId?: string;
+  rightChildId?: string;
+  path?: string;
+  depth?: number;
+  leftActiveCount?: number;
+  rightActiveCount?: number;
+  pairsCompleted?: number;
 }
 
 // Referral tree structure

@@ -82,6 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isVerified: false,
           registrationFee: 0,
           paymentStatus: 'pending',
+          leftActiveCount: 0,
+          rightActiveCount: 0,
+          pairsCompleted: 0,
+          depth: 0,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         } as User);
@@ -165,7 +169,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Create user profile in database with minimal attributes
       const userData = {
-        // userId: newAccount.$id, // Temporarily removed to test
         email,
         name,
         referralCode: generateReferralCode(),
