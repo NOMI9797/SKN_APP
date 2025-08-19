@@ -15,6 +15,8 @@ import { PAYFAST_CONFIG, payfastPayment } from '../../lib/payfast';
 import { PaymentFormData, PaymentMethod } from '../../types';
 import { MD5 } from 'crypto-js';
 
+// Note: Viewport configuration should be handled in layout.tsx to fix Next.js warning
+
 export default function PaymentPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -98,6 +100,8 @@ export default function PaymentPage() {
         customStr1: user.$id, // User ID
         customStr2: formData.paymentMethod, // Payment method
         customStr3: user.referralCode || 'SKN_USER', // Referral code (fallback if empty)
+        userEmail: user.email || 'test@example.com', // User email
+        userName: user.name || 'Customer', // User name
       }) as Record<string, string | number>; // Type assertion to allow field access
 
       // Type guard to ensure paymentData has the expected structure

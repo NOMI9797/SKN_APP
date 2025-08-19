@@ -4,9 +4,11 @@ import { MD5 } from 'crypto-js';
 export const PAYFAST_CONFIG = {
   // Sandbox (Development) Configuration
   SANDBOX: {
+    // First try your custom credentials, then fall back to official PayFast sandbox credentials
     MERCHANT_ID: process.env.NEXT_PUBLIC_PAYFAST_SANDBOX_MERCHANT_ID || '10000100',
     MERCHANT_KEY: process.env.NEXT_PUBLIC_PAYFAST_SANDBOX_MERCHANT_KEY || '46f0cd694581a',
-    PASS_PHRASE: '', // No passphrase for sandbox testing
+    PASS_PHRASE: process.env.NEXT_PUBLIC_PAYFAST_SANDBOX_PASS_PHRASE || 'jtKNOGTbFmFaUZV',
+    // PASS_PHRASE: '', // No passphrase for sandbox testing
     BASE_URL: 'https://sandbox.payfast.co.za',
     PAYMENT_URL: 'https://sandbox.payfast.co.za/eng/process',
     VALIDATION_URL: 'https://sandbox.payfast.co.za/eng/query/validate',
@@ -86,8 +88,10 @@ export class PayFastPayment {
     customStr1: string; // User ID
     customStr2: string; // Payment method
     customStr3: string; // Referral code
+    userEmail?: string; // User email (optional)
+    userName?: string; // User name (optional)
   }) {
-    // Minimal data for once-off payment - only essential fields
+    // PayFast required fields for payment processing
     const data: Record<string, string> = {
       merchant_id: this.config.MERCHANT_ID,
       merchant_key: this.config.MERCHANT_KEY,
@@ -95,12 +99,18 @@ export class PayFastPayment {
       cancel_url: PAYFAST_CONFIG.CANCEL_URL,
       notify_url: PAYFAST_CONFIG.NOTIFY_URL,
       
-      // Payment details
+      // Customer details (required by PayFast)
+      name_first: paymentData.userName || 'Customer',
+      name_last: 'User',
+      email_address: paymentData.userEmail || 'test@example.com',
+      
+      // Payment identification (required)
+      m_payment_id: `SKN_${Date.now()}`, // Unique payment ID
+      
+      // Payment details (required)
       amount: Number(paymentData.amount).toFixed(2), // Ensure exactly 2 decimal places as string
       item_name: paymentData.itemName,
-      
-      // Payment identification
-      m_payment_id: `SKN_${Date.now()}`, // Unique payment ID
+      item_description: paymentData.itemDescription,
       
       // Custom fields for tracking (only if they have values)
       ...(paymentData.customStr1 && paymentData.customStr1.trim() !== '' && { custom_str1: paymentData.customStr1 }),
@@ -147,47 +157,82 @@ export class PayFastPayment {
   
   // Generate signature for payment data
   generateSignature(data: Record<string, string | number>) {
-    // 1. Remove signature field and filter out empty/null/undefined values
+    // PayFast requires SPECIFIC ORDER - NOT alphabetical sorting!
+    // Official PayFast parameter order from their documentation:
+    const parameterOrder = [
+      'merchant_id',
+      'merchant_key', 
+      'return_url',
+      'cancel_url',
+      'notify_url',
+      'name_first',
+      'name_last', 
+      'email_address',
+      'm_payment_id',
+      'amount',
+      'item_name',
+      'item_description',
+      'custom_int1',
+      'custom_int2',
+      'custom_int3',
+      'custom_int4',
+      'custom_int5',
+      'custom_str1',
+      'custom_str2',
+      'custom_str3',
+      'custom_str4',
+      'custom_str5'
+    ];
+    
+    // 1. Filter out signature field and empty values
     const filtered: Record<string, string> = {};
     
     for (const [key, value] of Object.entries(data)) {
       if (key === 'signature') continue;  // Skip signature field
       if (value === null || value === undefined) continue;  // Skip null/undefined
       
-      const stringValue = String(value);  // Convert to string
+      const stringValue = String(value).trim();  // Convert to string and trim
       if (stringValue === '') continue;  // Skip empty strings
       
       filtered[key] = stringValue;  // Store as string
     }
     
-    // 2. Sort keys alphabetically
-    const sortedKeys = Object.keys(filtered).sort();
+    // 2. Build query string in PayFast's SPECIFIC ORDER (not alphabetical!)
+    const queryParts: string[] = [];
     
-    // 3. Build query string with URL encoding (keep spaces as %20)
-    const query = sortedKeys
-      .map(key => `${key}=${encodeURIComponent(filtered[key]).replace(/%20/g, '%20')}`)
-      .join('&');
+    for (const key of parameterOrder) {
+      if (filtered[key]) {
+        // PayFast specific encoding: spaces as +, uppercase hex codes
+        const encodedValue = encodeURIComponent(filtered[key])
+          .replace(/%20/g, '+')  // Spaces as +
+          .replace(/%([0-9A-F]{2})/g, (match, hex) => `%${hex.toUpperCase()}`); // Uppercase hex
+        
+        queryParts.push(`${key}=${encodedValue}`);
+      }
+    }
     
-    // 4. Append passphrase if set
+    const query = queryParts.join('&');
+    
+    // 3. Append passphrase if set (don't URL encode the passphrase itself)
     let finalString = query;
-    if (this.config.PASS_PHRASE && this.config.PASS_PHRASE.length > 0) {
-      finalString = `${query}&passphrase=${encodeURIComponent(this.config.PASS_PHRASE).replace(/%20/g, '%20')}`;
+    if (this.config.PASS_PHRASE && this.config.PASS_PHRASE.trim().length > 0) {
+      finalString = `${query}&passphrase=${this.config.PASS_PHRASE.trim()}`;
       console.log('Passphrase added to final string');
     } else {
       console.log('No passphrase set - using query string as is');
     }
     
     // Debug logging for signature generation
-    console.log('=== PayFast Signature Generation (Exact Rules) ===');
+    console.log('=== PayFast Signature Generation (CORRECT ORDER) ===');
     console.log('Filtered fields:', filtered);
-    console.log('Sorted keys:', sortedKeys);
+    console.log('Parameter order used:', parameterOrder.filter(key => filtered[key]));
     console.log('Query string:', query);
     console.log('Passphrase value:', this.config.PASS_PHRASE);
     console.log('Final string to hash:', finalString);
     console.log('Final string length:', finalString.length);
     
-    // 5. Generate MD5 hash of the final string
-    const signature = MD5(finalString).toString();
+    // 4. Generate MD5 hash of the final string (lowercase)
+    const signature = MD5(finalString).toString().toLowerCase();
     console.log('Generated signature:', signature);
     console.log('Signature length:', signature.length);
     console.log('=====================================');

@@ -10,7 +10,11 @@ export const metadata: Metadata = {
   description: 'Join SKN and start earning from home with our digital network marketing system. Refer 2 people and start building your network today!',
   keywords: 'network marketing, MLM, digital business, home business, SKN, Pakistan',
   authors: [{ name: 'SKN Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({
