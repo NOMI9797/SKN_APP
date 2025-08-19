@@ -75,6 +75,40 @@ export interface Payment {
   updatedAt: string;
 }
 
+// PayFast payment types
+export interface PayFastPayment {
+  $id: string;
+  userId: string;
+  amount: number;
+  paymentMethod: 'jazz_cash' | 'easypaisa';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  payfastPaymentId?: string;
+  merchantId?: string;
+  merchantTransactionId?: string;
+  transactionId?: string;
+  paymentStatus?: string;
+  paymentDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Payment form data
+export interface PaymentFormData {
+  paymentMethod: 'jazz_cash' | 'easypaisa';
+  amount: number;
+  agreeToTerms: boolean;
+}
+
+// Payment method options
+export interface PaymentMethod {
+  id: 'jazz_cash' | 'easypaisa';
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+}
+
 // Pair completion tracking
 export interface PairCompletion {
   $id: string;

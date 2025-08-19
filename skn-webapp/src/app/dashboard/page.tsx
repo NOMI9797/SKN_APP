@@ -135,7 +135,10 @@ export default function DashboardPage() {
               <div className="text-right">
                 <div className="text-3xl font-bold">850 PKR</div>
                 <div className="text-blue-100 text-sm">One-time fee</div>
-                <button className="mt-3 px-6 py-3 bg-white text-blue-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors">
+                <button 
+                  onClick={() => router.push('/payment')}
+                  className="mt-3 px-6 py-3 bg-white text-blue-600 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+                >
                   Pay Now
                 </button>
               </div>
