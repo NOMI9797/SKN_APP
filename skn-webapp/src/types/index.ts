@@ -1,39 +1,110 @@
 // User related types
 export interface User {
   $id: string;
-  userId: string; // Appwrite auth user ID
-  email: string;
   name: string;
-  phone?: string;
-  profileImage?: string;
+  email: string;
   referralCode: string;
-  referredBy?: string;
-  position?: 'left' | 'right';
-  sponsorId?: string;
-  leftUserId?: string;
-  rightUserId?: string;
-  leftPairs: number;
+  isActive: boolean;
   rightPairs: number;
+  leftPairs: number;
   totalEarnings: number;
   starLevel: number;
-  isActive: boolean;
-  isVerified: boolean;
-  registrationFee: number; // Starts at 0, updated to 850 after payment
-  paymentStatus: 'pending' | 'processing' | 'completed' | 'failed';
-  lastLoginAt?: string;
+  registrationFee: number;
+  paymentStatus: string;
   createdAt: string;
   updatedAt: string;
-  
-  // Binary tree structure fields
+  userId: string;
+  sponsorId?: string;
   parentId?: string;
-  side?: 'left' | 'right';
+  side?: 'right' | 'left';
   leftChildId?: string;
   rightChildId?: string;
   path?: string;
-  depth?: number;
-  leftActiveCount?: number;
-  rightActiveCount?: number;
-  pairsCompleted?: number;
+  depth: number;
+  leftActiveCount: number;
+  rightActiveCount: number;
+  pairsCompleted: number;
+}
+
+export interface Referral {
+  $id: string;
+  referralCode: string;
+  sponsorId: string;
+  prospectEmail?: string;
+  status: 'clicked' | 'registered';
+  registeredUserId?: string;
+  createdAt: string;
+}
+
+export interface Payment {
+  $id: string;
+  userId: string;
+  type: 'join_fee' | 'payout' | 'adjustment';
+  amount: number;
+  currency: string; // default 'PKR'
+  status: 'pending' | 'completed' | 'failed' | 'verified';
+  gateway: string; // e.g., 'jazzcash', 'easypaisa', 'manual'
+  externalTransactionId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Pair {
+  $id: string;
+  userId: string; // beneficiary
+  pairIndex: number; // unique per user
+  leftUserId: string;
+  rightUserId: string;
+  completedAt: string;
+  amount: number; // PKR at time of credit
+}
+
+export interface Earning {
+  $id: string;
+  userId: string;
+  sourceType: 'pair' | 'star_reward' | 'manual';
+  sourceId: string; // pairId or starLevelId
+  amount: number;
+  currency: string; // default 'PKR'
+  balanceAfter?: number;
+  note?: string;
+  createdAt: string;
+}
+
+export interface StarLevel {
+  $id: string;
+  level: number; // unique
+  requiredPairs: number;
+  rewardAmount: number;
+  title: string;
+  isActive: boolean; // default true
+}
+
+export interface SystemSettings {
+  $id: string;
+  joiningFee: number; // default 850
+  currency: string; // default 'PKR'
+  pairEarning: number;
+  firstPairEarning: number;
+  regularPairEarning: number;
+  after100PairEarning: number;
+  placementStrategy: 'leftmost' | 'balanced'; // default 'leftmost'
+}
+
+export interface PaymentFormData {
+  paymentMethod: string;
+  amount: number;
+  agreeToTerms: boolean;
+}
+
+export interface PaymentMethod {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  bgColor: string;
 }
 
 // Referral tree structure
@@ -61,20 +132,6 @@ export interface Transaction {
   createdAt: string;
 }
 
-// Payment types
-export interface Payment {
-  $id: string;
-  userId: string;
-  amount: number;
-  status: 'pending' | 'completed' | 'failed';
-  paymentMethod: 'bank_transfer' | 'easypaisa' | 'jazz_cash' | 'other';
-  transactionId?: string;
-  proofImage?: string;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 // PayFast payment types
 export interface PayFastPayment {
   $id: string;
@@ -90,23 +147,6 @@ export interface PayFastPayment {
   paymentDate?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-// Payment form data
-export interface PaymentFormData {
-  paymentMethod: 'jazz_cash' | 'easypaisa';
-  amount: number;
-  agreeToTerms: boolean;
-}
-
-// Payment method options
-export interface PaymentMethod {
-  id: 'jazz_cash' | 'easypaisa';
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  bgColor: string;
 }
 
 // Pair completion tracking

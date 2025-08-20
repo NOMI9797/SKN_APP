@@ -3,8 +3,9 @@
 import { useAuth } from '../../hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { LogOut, Users, TrendingUp, Star } from 'lucide-react';
+import { User } from '@/types';
 
-export default function MainHomePage({ user }: { user: any }) {
+export default function MainHomePage({ user }: { user: User }) {
   const { logout } = useAuth();
   const router = useRouter();
 
@@ -58,7 +59,7 @@ export default function MainHomePage({ user }: { user: any }) {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Referrals</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {(user.leftUserId ? 1 : 0) + (user.rightUserId ? 1 : 0)}
+                  {(user.leftActiveCount || 0) + (user.rightActiveCount || 0)}
                 </p>
               </div>
             </div>
@@ -72,7 +73,7 @@ export default function MainHomePage({ user }: { user: any }) {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Pairs</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {user.leftPairs + user.rightPairs}
+                  {user.pairsCompleted || 0}
                 </p>
               </div>
             </div>

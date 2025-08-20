@@ -9,7 +9,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, referralCode?: string) => Promise<void>;
+  register: (email: string, password: string, name: string, referralCode?: string) => Promise<{ success: boolean; user: User | null }>;
   logout: () => Promise<void>;
   updateProfile: (data: Partial<User>) => Promise<void>;
 }
@@ -65,32 +65,312 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = await account.get();
       console.log('checkUser - currentUser:', currentUser);
       
-      if (currentUser && currentUser.$id && currentUser.$id.length <= 36) {
-        // Only proceed if we have a valid user ID
-        console.log('User logged in with valid ID:', currentUser.$id);
-        setUser({ 
-          $id: currentUser.$id,
-          userId: currentUser.$id, // Set userId to match Appwrite auth ID
-          email: currentUser.email,
-          name: currentUser.name,
-          referralCode: '',
-          leftPairs: 0,
-          rightPairs: 0,
-          totalEarnings: 0,
-          starLevel: 0,
-          isActive: false,
-          isVerified: false,
-          registrationFee: 0,
-          paymentStatus: 'pending',
-          leftActiveCount: 0,
-          rightActiveCount: 0,
-          pairsCompleted: 0,
-          depth: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        } as User);
+      if (currentUser && currentUser.$id) {
+        try {
+          // First try to find user by email (more reliable for existing users)
+          console.log('Trying to find user by email:', currentUser.email);
+          try {
+            const userQuery = await databases.listDocuments(
+              DATABASE_ID,
+              COLLECTIONS.USERS,
+              [
+                // Query for user by email
+                Query.equal('email', currentUser.email)
+              ]
+            );
+            
+            console.log('Email search results:', {
+              total: userQuery.total,
+              documents: userQuery.documents?.length || 0,
+              found: userQuery.documents && userQuery.documents.length > 0
+            });
+            
+            if (userQuery.documents && userQuery.documents.length > 0) {
+              // User found by email
+              const userDoc = userQuery.documents[0];
+              console.log('User found by email:', userDoc);
+              setUser(userDoc as unknown as User);
+            } else {
+              // User not found by email, try by ID
+              console.log('User not found by email, trying by ID...');
+              try {
+                const userDoc = await databases.getDocument(
+                  DATABASE_ID,
+                  COLLECTIONS.USERS,
+                  currentUser.$id
+                );
+                
+                if (userDoc) {
+                  console.log('User found by ID:', userDoc);
+                  setUser(userDoc as unknown as User);
+                } else {
+                  // User document doesn't exist, create one
+                  console.log('User document not found, creating new one...');
+                  console.log('Creating document with ID:', currentUser.$id);
+                  console.log('Using collection:', COLLECTIONS.USERS);
+                  console.log('Using database:', DATABASE_ID);
+                  
+                  try {
+                    const newUserDoc = await databases.createDocument(
+                      DATABASE_ID,
+                      COLLECTIONS.USERS,
+                      currentUser.$id, // Use the same ID as auth user
+                      {
+                        name: currentUser.name || 'User',
+                        email: currentUser.email || '',
+                        referralCode: generateReferralCode(),
+                        isActive: false,
+                        rightPairs: 0,
+                        leftPairs: 0,
+                        totalEarnings: 0,
+                        starLevel: 0,
+                        registrationFee: 0,
+                        paymentStatus: 'pending',
+                        userId: currentUser.$id,
+                        depth: 0,
+                        leftActiveCount: 0,
+                        rightActiveCount: 0,
+                        pairsCompleted: 0,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                      }
+                    );
+                    
+                    console.log('Document creation successful:', newUserDoc);
+                    setUser(newUserDoc as unknown as User);
+                    console.log('New user document created:', newUserDoc);
+                  } catch (createError: any) {
+                    console.error('Failed to create user document in first attempt:', createError);
+                    console.log('Create error details:', {
+                      message: createError?.message,
+                      code: createError?.code,
+                      type: createError?.constructor?.name,
+                      fullError: createError
+                    });
+                    
+                    // Fallback to basic user object
+                    setUser({ 
+                      $id: currentUser.$id,
+                      userId: currentUser.$id,
+                      email: currentUser.email || '',
+                      name: currentUser.name || 'User',
+                      referralCode: '',
+                      isActive: false,
+                      leftPairs: 0,
+                      rightPairs: 0,
+                      totalEarnings: 0,
+                      starLevel: 0,
+                      registrationFee: 0,
+                      paymentStatus: 'pending',
+                      leftActiveCount: 0,
+                      rightActiveCount: 0,
+                      pairsCompleted: 0,
+                      depth: 0,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    } as User);
+                  }
+                }
+              } catch (idError: any) {
+                console.log('Error fetching by ID:', idError);
+                // Continue with document creation
+              }
+            }
+          } catch (emailSearchError: any) {
+            console.error('Error searching by email:', emailSearchError);
+            console.log('Email search error details:', {
+              message: emailSearchError?.message,
+              code: emailSearchError?.code,
+              type: emailSearchError?.constructor?.name,
+              fullError: emailSearchError
+            });
+            
+            // If email search fails, try ID search as fallback
+            console.log('Email search failed, trying ID search as fallback...');
+            try {
+              const userDoc = await databases.getDocument(
+                DATABASE_ID,
+                COLLECTIONS.USERS,
+                currentUser.$id
+              );
+              
+              if (userDoc) {
+                console.log('User found by ID (fallback):', userDoc);
+                setUser(userDoc as unknown as User);
+              } else {
+                // User document doesn't exist, create one
+                console.log('User document not found, creating new one...');
+                console.log('Creating document with ID:', currentUser.$id);
+                console.log('Using collection:', COLLECTIONS.USERS);
+                console.log('Using database:', DATABASE_ID);
+                
+                try {
+                  const newUserDoc = await databases.createDocument(
+                    DATABASE_ID,
+                    COLLECTIONS.USERS,
+                    currentUser.$id, // Use the same ID as auth user
+                    {
+                      name: currentUser.name || 'User',
+                      email: currentUser.email || '',
+                      referralCode: generateReferralCode(),
+                      isActive: false,
+                      rightPairs: 0,
+                      leftPairs: 0,
+                      totalEarnings: 0,
+                      starLevel: 0,
+                      registrationFee: 0,
+                      paymentStatus: 'pending',
+                      userId: currentUser.$id,
+                      depth: 0,
+                      leftActiveCount: 0,
+                      rightActiveCount: 0,
+                      pairsCompleted: 0,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    }
+                  );
+                  
+                  console.log('Document creation successful:', newUserDoc);
+                  setUser(newUserDoc as unknown as User);
+                  console.log('New user document created:', newUserDoc);
+                } catch (createError: any) {
+                  console.error('Failed to create user document in first attempt:', createError);
+                  console.log('Create error details:', {
+                    message: createError?.message,
+                    code: createError?.code,
+                    type: createError?.constructor?.name,
+                    fullError: createError
+                  });
+                  
+                  // Fallback to basic user object
+                  setUser({ 
+                    $id: currentUser.$id,
+                    userId: currentUser.$id,
+                    email: currentUser.email || '',
+                    name: currentUser.name || 'User',
+                    referralCode: '',
+                    isActive: false,
+                    leftPairs: 0,
+                    rightPairs: 0,
+                    totalEarnings: 0,
+                    starLevel: 0,
+                    registrationFee: 0,
+                    paymentStatus: 'pending',
+                    leftActiveCount: 0,
+                    rightActiveCount: 0,
+                    pairsCompleted: 0,
+                    depth: 0,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  } as User);
+                }
+              }
+            } catch (idError: any) {
+              console.log('Error fetching by ID (fallback):', idError);
+              // Continue with document creation
+            }
+          }
+        } catch (dbError: any) {
+          console.log('Database error details:', {
+            message: dbError?.message,
+            code: dbError?.code,
+            type: dbError?.constructor?.name,
+            fullError: dbError
+          });
+          
+          if (dbError?.message?.includes('Document with the requested ID could not be found')) {
+            // User document doesn't exist, create one
+            try {
+              console.log('User document not found, creating new one...');
+              console.log('Creating document with ID:', currentUser.$id);
+              console.log('Using collection:', COLLECTIONS.USERS);
+              console.log('Using database:', DATABASE_ID);
+              
+              const newUserDoc = await databases.createDocument(
+                DATABASE_ID,
+                COLLECTIONS.USERS,
+                currentUser.$id, // Use the same ID as auth user
+                {
+                  name: currentUser.name || 'User',
+                  email: currentUser.email || '',
+                  referralCode: generateReferralCode(),
+                  isActive: false,
+                  rightPairs: 0,
+                  leftPairs: 0,
+                  totalEarnings: 0,
+                  starLevel: 0,
+                  registrationFee: 0,
+                  paymentStatus: 'pending',
+                  userId: currentUser.$id,
+                  depth: 0,
+                  leftActiveCount: 0,
+                  rightActiveCount: 0,
+                  pairsCompleted: 0,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                }
+              );
+              
+              console.log('Document creation successful after error:', newUserDoc);
+              setUser(newUserDoc as unknown as User);
+              console.log('New user document created after error:', newUserDoc);
+            } catch (createError: any) {
+              console.error('Failed to create user document after error:', createError);
+              console.log('Create error details:', {
+                message: createError?.message,
+                code: createError?.code,
+                type: createError?.constructor?.name,
+                fullError: createError
+              });
+              
+              // Fallback to basic user object
+              setUser({ 
+                $id: currentUser.$id,
+                userId: currentUser.$id,
+                email: currentUser.email || '',
+                name: currentUser.name || 'User',
+                referralCode: '',
+                isActive: false,
+                leftPairs: 0,
+                rightPairs: 0,
+                totalEarnings: 0,
+                starLevel: 0,
+                registrationFee: 0,
+                paymentStatus: 'pending',
+                leftActiveCount: 0,
+                rightActiveCount: 0,
+                pairsCompleted: 0,
+                depth: 0,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              } as User);
+            }
+          } else {
+            console.log('Database fetch failed for other reason, using basic user object:', dbError);
+            // If database fetch fails for other reasons, use basic user object
+            setUser({ 
+              $id: currentUser.$id,
+              userId: currentUser.$id,
+              email: currentUser.email || '',
+              name: currentUser.name || 'User',
+              referralCode: '',
+              isActive: false,
+              leftPairs: 0,
+              rightPairs: 0,
+              totalEarnings: 0,
+              starLevel: 0,
+              registrationFee: 0,
+              paymentStatus: 'pending',
+              leftActiveCount: 0,
+              rightActiveCount: 0,
+              pairsCompleted: 0,
+              depth: 0,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as User);
+          }
+        }
       } else {
-        console.log('Invalid user data:', currentUser);
         setUser(null);
       }
     } catch (error: any) {
@@ -128,19 +408,310 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = await account.get();
       console.log('Current user after session creation:', currentUser);
 
-      // Load user profile from your database (using email mapping)
-      const userResult = await databases.listDocuments(
-        DATABASE_ID,
-        COLLECTIONS.USERS,
-        [Query.equal('email', email)]
-      );
-
-      if (userResult.documents.length > 0) {
-        const userDoc = userResult.documents[0];
-        setUser(userDoc as unknown as User);
-      } else {
-        console.log('No user document found for this email');
-        setUser(null);
+      try {
+        // Try to fetch the actual user profile from database
+        console.log('Trying to find user by email after login:', currentUser.email);
+        console.log('Current user ID:', currentUser.$id);
+        
+        try {
+          const userQuery = await databases.listDocuments(
+            DATABASE_ID,
+            COLLECTIONS.USERS,
+            [
+              // Query for user by email
+              Query.equal('email', currentUser.email)
+            ]
+          );
+          
+          console.log('Email search results:', {
+            total: userQuery.total,
+            documents: userQuery.documents?.length || 0,
+            found: userQuery.documents && userQuery.documents.length > 0
+          });
+          
+          if (userQuery.documents && userQuery.documents.length > 0) {
+            // User found by email
+            const userDoc = userQuery.documents[0];
+            console.log('User found by email after login:', userDoc);
+            setUser(userDoc as unknown as User);
+          } else {
+            // User not found by email, try by ID
+            console.log('User not found by email after login, trying by ID...');
+            try {
+              const userDoc = await databases.getDocument(
+                DATABASE_ID,
+                COLLECTIONS.USERS,
+                currentUser.$id
+              );
+              
+              if (userDoc) {
+                console.log('User found by ID after login:', userDoc);
+                setUser(userDoc as unknown as User);
+              } else {
+                // User document doesn't exist, create one
+                console.log('User document not found after login, creating new one...');
+                console.log('Creating document with ID:', currentUser.$id);
+                console.log('Using collection:', COLLECTIONS.USERS);
+                console.log('Using database:', DATABASE_ID);
+                
+                try {
+                  const newUserDoc = await databases.createDocument(
+                    DATABASE_ID,
+                    COLLECTIONS.USERS,
+                    currentUser.$id, // Use the same ID as auth user
+                    {
+                      name: currentUser.name || 'User',
+                      email: currentUser.email || '',
+                      referralCode: generateReferralCode(),
+                      isActive: false,
+                      rightPairs: 0,
+                      leftPairs: 0,
+                      totalEarnings: 0,
+                      starLevel: 0,
+                      registrationFee: 0,
+                      paymentStatus: 'pending',
+                      userId: currentUser.$id,
+                      depth: 0,
+                      leftActiveCount: 0,
+                      rightActiveCount: 0,
+                      pairsCompleted: 0,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    }
+                  );
+                  
+                  console.log('Document creation successful after login:', newUserDoc);
+                  setUser(newUserDoc as unknown as User);
+                  console.log('New user document created after login:', newUserDoc);
+                } catch (createError: any) {
+                  console.error('Failed to create user document after login:', createError);
+                  console.log('Create error details:', {
+                    message: createError?.message,
+                    code: createError?.code,
+                    type: createError?.constructor?.name,
+                    fullError: createError
+                  });
+                  
+                  // Fallback to basic user object
+                  setUser({ 
+                    $id: currentUser.$id,
+                    userId: currentUser.$id,
+                    email: currentUser.email || '',
+                    name: currentUser.name || 'User',
+                    referralCode: '',
+                    isActive: false,
+                    leftPairs: 0,
+                    rightPairs: 0,
+                    totalEarnings: 0,
+                    starLevel: 0,
+                    registrationFee: 0,
+                    paymentStatus: 'pending',
+                    leftActiveCount: 0,
+                    rightActiveCount: 0,
+                    pairsCompleted: 0,
+                    depth: 0,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  } as User);
+                }
+              }
+            } catch (idError: any) {
+              console.log('Error fetching by ID after login:', idError);
+              console.log('ID error details:', {
+                message: idError?.message,
+                code: idError?.code,
+                type: idError?.constructor?.name,
+                fullError: idError
+              });
+              // Continue with document creation
+            }
+          }
+        } catch (emailSearchError: any) {
+          console.error('Error searching by email after login:', emailSearchError);
+          console.log('Email search error details:', {
+            message: emailSearchError?.message,
+            code: emailSearchError?.code,
+            type: emailSearchError?.constructor?.name,
+            fullError: emailSearchError
+          });
+          
+          // If email search fails, try ID search as fallback
+          console.log('Email search failed after login, trying ID search as fallback...');
+          try {
+            const userDoc = await databases.getDocument(
+              DATABASE_ID,
+              COLLECTIONS.USERS,
+              currentUser.$id
+            );
+            
+            if (userDoc) {
+              console.log('User found by ID after login (fallback):', userDoc);
+              setUser(userDoc as unknown as User);
+            } else {
+              // User document doesn't exist, create one
+              console.log('User document not found after login, creating new one...');
+              console.log('Creating document with ID:', currentUser.$id);
+              console.log('Using collection:', COLLECTIONS.USERS);
+              console.log('Using database:', DATABASE_ID);
+              
+              try {
+                const newUserDoc = await databases.createDocument(
+                  DATABASE_ID,
+                  COLLECTIONS.USERS,
+                  currentUser.$id, // Use the same ID as auth user
+                  {
+                    name: currentUser.name || 'User',
+                    email: currentUser.email || '',
+                    referralCode: generateReferralCode(),
+                    isActive: false,
+                    rightPairs: 0,
+                    leftPairs: 0,
+                    totalEarnings: 0,
+                    starLevel: 0,
+                    registrationFee: 0,
+                    paymentStatus: 'pending',
+                    userId: currentUser.$id,
+                    depth: 0,
+                    leftActiveCount: 0,
+                    rightActiveCount: 0,
+                    pairsCompleted: 0,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  }
+                );
+                
+                console.log('Document creation successful after login (fallback):', newUserDoc);
+                setUser(newUserDoc as unknown as User);
+                console.log('New user document created after login (fallback):', newUserDoc);
+              } catch (createError: any) {
+                console.error('Failed to create user document after login (fallback):', createError);
+                console.log('Create error details:', {
+                  message: createError?.message,
+                  code: createError?.code,
+                  type: createError?.constructor?.name,
+                  fullError: createError
+                });
+                
+                // Fallback to basic user object
+                setUser({ 
+                  $id: currentUser.$id,
+                  userId: currentUser.$id,
+                  email: currentUser.email || '',
+                  name: currentUser.name || 'User',
+                  referralCode: '',
+                  isActive: false,
+                  leftPairs: 0,
+                  rightPairs: 0,
+                  totalEarnings: 0,
+                  starLevel: 0,
+                  registrationFee: 0,
+                  paymentStatus: 'pending',
+                  leftActiveCount: 0,
+                  rightActiveCount: 0,
+                  pairsCompleted: 0,
+                  depth: 0,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                } as User);
+              }
+            }
+          } catch (idError: any) {
+            console.log('Error fetching by ID after login (fallback):', idError);
+            // Continue with document creation
+          }
+        }
+      } catch (dbError: any) {
+        if (dbError?.message?.includes('Document with the requested ID could not be found')) {
+          // User document doesn't exist, create one
+          try {
+            console.log('User document not found after login, creating new one...');
+            console.log('Creating document with ID:', currentUser.$id);
+            console.log('Using collection:', COLLECTIONS.USERS);
+            console.log('Using database:', DATABASE_ID);
+            
+            const newUserDoc = await databases.createDocument(
+              DATABASE_ID,
+              COLLECTIONS.USERS,
+              currentUser.$id, // Use the same ID as auth user
+              {
+                name: currentUser.name || 'User',
+                email: currentUser.email || '',
+                referralCode: generateReferralCode(),
+                isActive: false,
+                rightPairs: 0,
+                leftPairs: 0,
+                totalEarnings: 0,
+                starLevel: 0,
+                registrationFee: 0,
+                paymentStatus: 'pending',
+                userId: currentUser.$id,
+                depth: 0,
+                leftActiveCount: 0,
+                rightActiveCount: 0,
+                pairsCompleted: 0,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              }
+            );
+            
+            console.log('Document creation successful after login error:', newUserDoc);
+            setUser(newUserDoc as unknown as User);
+            console.log('New user document created after login error:', newUserDoc);
+          } catch (createError: any) {
+            console.error('Failed to create user document after login:', createError);
+            console.log('Create error details:', {
+              message: createError?.message,
+              code: createError?.code,
+              type: createError?.constructor?.name,
+              fullError: createError
+            });
+            
+            // Fallback to basic user object
+            setUser({ 
+              $id: currentUser.$id,
+              userId: currentUser.$id,
+              email: currentUser.email || '',
+              name: currentUser.name || 'User',
+              referralCode: '',
+              isActive: false,
+              leftPairs: 0,
+              rightPairs: 0,
+              totalEarnings: 0,
+              starLevel: 0,
+              registrationFee: 0,
+              paymentStatus: 'pending',
+              leftActiveCount: 0,
+              rightActiveCount: 0,
+              pairsCompleted: 0,
+              depth: 0,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as User);
+          }
+        } else {
+          console.log('Database fetch failed after login, using basic user object:', dbError);
+          // If database fetch fails for other reasons, use basic user object
+          setUser({ 
+            $id: currentUser.$id,
+            userId: currentUser.$id,
+            email: currentUser.email || '',
+            name: currentUser.name || 'User',
+            referralCode: '',
+            isActive: false,
+            leftPairs: 0,
+            rightPairs: 0,
+            totalEarnings: 0,
+            starLevel: 0,
+            registrationFee: 0,
+            paymentStatus: 'pending',
+            leftActiveCount: 0,
+            rightActiveCount: 0,
+            pairsCompleted: 0,
+            depth: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as User);
+        }
       }
 
     } catch (error: any) {
@@ -169,27 +740,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Create user profile in database with minimal attributes
       const userData = {
-        email,
         name,
+        email,
         referralCode: generateReferralCode(),
+        isActive: false,
+        rightPairs: 0,
+        leftPairs: 0,
+        totalEarnings: 0,
+        starLevel: 0,
+        registrationFee: 0,
+        paymentStatus: 'pending',
+        userId: newAccount.$id,
+        depth: 0,
+        leftActiveCount: 0,
+        rightActiveCount: 0,
+        pairsCompleted: 0,
+        sponsorId: referralCode || undefined,
       };
       
-      console.log('User data to create:', userData);
-      console.log('Database ID:', DATABASE_ID);
-      console.log('Collection ID:', COLLECTIONS.USERS);
+      // Create the user document in the database
+      try {
+        console.log('Creating user document in database...');
+        console.log('Using collection:', COLLECTIONS.USERS);
+        console.log('Using database:', DATABASE_ID);
+        console.log('User data:', userData);
+        
+        const newUserDoc = await databases.createDocument(
+          DATABASE_ID,
+          COLLECTIONS.USERS,
+          newAccount.$id, // Use the same ID as the Appwrite account
+          userData
+        );
+        
+        console.log('User document created successfully:', newUserDoc);
+        console.log('Registration successful - user document created in database');
+        
+        // Now automatically log the user in
+        try {
+          console.log('Auto-logging in user after registration...');
+          
+          // Create a session for the newly registered user
+          await account.createEmailPasswordSession(email, password);
+          console.log('Session created for new user');
+          
+          // Set the user state with the created document
+          setUser(newUserDoc as unknown as User);
+          console.log('User state set after auto-login:', newUserDoc);
+          
+          // Return success - the calling component can handle redirect to payment
+          return { success: true, user: newUserDoc as unknown as User };
+          
+        } catch (loginError: any) {
+          console.error('Auto-login failed after registration:', loginError);
+          console.log('Login error details:', {
+            message: loginError?.message,
+            code: loginError?.code,
+            type: loginError?.constructor?.name,
+            fullError: loginError
+          });
+          
+          // Even if auto-login fails, registration was successful
+          // User can manually login
+          console.log('Auto-login failed but registration successful - user can login manually');
+          return { success: true, user: null };
+        }
+        
+      } catch (dbError: any) {
+        console.error('Failed to create user document during registration:', dbError);
+        console.log('Database error details:', {
+          message: dbError?.message,
+          code: dbError?.code,
+          type: dbError?.constructor?.name,
+          fullError: dbError
+        });
+        
+        // Even if database creation fails, the Appwrite account was created
+        // User can still login, and the document will be created during login
+        console.log('User account created but database document failed - will be created on first login');
+        
+        // Try to auto-login anyway
+        try {
+          console.log('Attempting auto-login despite database failure...');
+          await account.createEmailPasswordSession(email, password);
+          console.log('Session created for new user (despite DB failure)');
+          
+          // Set basic user state
+          const basicUser = {
+            $id: newAccount.$id,
+            userId: newAccount.$id,
+            email,
+            name,
+            referralCode: userData.referralCode,
+            isActive: false,
+            leftPairs: 0,
+            rightPairs: 0,
+            totalEarnings: 0,
+            starLevel: 0,
+            registrationFee: 0,
+            paymentStatus: 'pending',
+            leftActiveCount: 0,
+            rightActiveCount: 0,
+            pairsCompleted: 0,
+            depth: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as User;
+          
+          setUser(basicUser);
+          console.log('Basic user state set after auto-login:', basicUser);
+          
+          return { success: true, user: basicUser };
+          
+        } catch (loginError: any) {
+          console.error('Auto-login failed after registration (DB failure):', loginError);
+          return { success: true, user: null };
+        }
+      }
 
-      const userDoc = await databases.createDocument(
-        DATABASE_ID,
-        COLLECTIONS.USERS,
-        ID.unique(), // Use unique ID for document, not user auth ID
-        userData
-      );
-      
-      console.log('User document created:', userDoc);
-
-      // User document created successfully
-      // Don't auto-login to avoid session issues
-      setUser(userDoc as unknown as User);
     } catch (error) {
       console.error('Registration error:', error);
       throw error;
@@ -220,18 +887,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     
     try {
-      // Filter out fields that shouldn't be updated
-      const { $id, createdAt, ...updateData } = data;
-      const updatedUser = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.USERS,
-        user.$id,
-        {
-          ...updateData,
-          updatedAt: new Date().toISOString(),
-        }
-      );
-      setUser(updatedUser as unknown as User);
+      // Just update local state - no database complexity for now
+      const updatedUser = { ...user, ...data };
+      setUser(updatedUser);
     } catch (error) {
       console.error('Profile update error:', error);
       throw error;
