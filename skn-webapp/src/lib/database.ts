@@ -383,16 +383,14 @@ export class DatabaseService {
       }
 
       const directReferrals = await this.getDirectReferrals(userId);
-      const leftReferrals = directReferrals.filter(ref => ref.side === 'left');
-      const rightReferrals = directReferrals.filter(ref => ref.side === 'right');
 
       return {
         totalReferrals: directReferrals.length,
-        leftReferrals: leftReferrals.length,
-        rightReferrals: rightReferrals.length,
-        totalPairs: user.pairsCompleted,
-        totalEarnings: user.totalEarnings,
-        currentStarLevel: user.starLevel,
+        leftReferrals: user.leftActiveCount || 0,
+        rightReferrals: user.rightActiveCount || 0,
+        totalPairs: user.pairsCompleted || 0,
+        totalEarnings: user.totalEarnings || 0,
+        currentStarLevel: user.starLevel || 0,
       };
     } catch (error) {
       console.error('Error getting user stats:', error);
@@ -404,6 +402,159 @@ export class DatabaseService {
         totalEarnings: 0,
         currentStarLevel: 0,
       };
+    }
+  }
+
+  // Pair placement and propagation
+  private async findPlacementSlotBFS(rootUserId: string): Promise<{ parentId: string; side: 'left' | 'right'; depth: number; path: string } | null> {
+    const queue: Array<{ id: string; depth: number; path: string }> = [{ id: rootUserId, depth: 0, path: rootUserId }];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const parent = await this.getUserById(current.id);
+      if (!parent) continue;
+
+      const leftChildId = (parent as any).leftChildId as string | undefined;
+      const rightChildId = (parent as any).rightChildId as string | undefined;
+
+      if (!leftChildId) {
+        return { parentId: parent.$id, side: 'left', depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` };
+      }
+      if (!rightChildId) {
+        return { parentId: parent.$id, side: 'right', depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` };
+      }
+
+      // Enqueue children
+      const children = await this.getUsersByParentId(parent.$id);
+      for (const child of children) {
+        queue.push({ id: child.$id, depth: (child.depth || 0), path: `${current.path}/${parent.$id}` });
+      }
+    }
+    return null;
+  }
+
+  private calculatePairEarningAmount(pairIndex: number): number {
+    if (pairIndex === 1) return 400;
+    if (pairIndex >= 2 && pairIndex <= 99) return 200;
+    return 100;
+  }
+
+  private async propagateActivationUpwards(startParentId: string, originatingSide: 'left' | 'right'): Promise<void> {
+    let currentParent = await this.getUserById(startParentId);
+    let childSide: 'left' | 'right' = originatingSide;
+
+    while (currentParent) {
+      const beforeLeft = currentParent.leftActiveCount || 0;
+      const beforeRight = currentParent.rightActiveCount || 0;
+      const beforePairs = currentParent.pairsCompleted || 0;
+      const beforeTotal = currentParent.totalEarnings || 0;
+
+      const newLeft = childSide === 'left' ? beforeLeft + 1 : beforeLeft;
+      const newRight = childSide === 'right' ? beforeRight + 1 : beforeRight;
+
+      let updates: Partial<User> = {
+        leftActiveCount: newLeft,
+        rightActiveCount: newRight,
+      } as Partial<User>;
+
+      // Determine new pairs formed
+      const possiblePairs = Math.min(newLeft, newRight);
+      let newPairs = Math.max(0, possiblePairs - beforePairs);
+
+      if (newPairs > 0) {
+        // Create pairs and earnings
+        for (let i = 1; i <= newPairs; i++) {
+          const nextPairIndex = (currentParent.pairsCompleted || 0) + i;
+          const amount = this.calculatePairEarningAmount(nextPairIndex);
+
+          try {
+            await this.createPair({
+              userId: currentParent.$id,
+              pairIndex: nextPairIndex,
+              leftUserId: (currentParent as any).leftChildId || '',
+              rightUserId: (currentParent as any).rightChildId || '',
+              completedAt: new Date().toISOString(),
+              amount,
+            } as unknown as Omit<Pair, '$id'>);
+          } catch (e) {
+            console.error('Failed to create pair record:', e);
+          }
+
+          try {
+            await this.createEarning({
+              userId: currentParent.$id,
+              sourceType: 'pair',
+              sourceId: `pair_${nextPairIndex}`,
+              amount,
+              currency: 'PKR',
+              balanceAfter: undefined,
+              note: `Pair #${nextPairIndex} completion reward`,
+              createdAt: new Date().toISOString(),
+            } as unknown as Omit<Earning, '$id'>);
+          } catch (e) {
+            console.error('Failed to create earning record:', e);
+          }
+        }
+
+        // Sum earnings added for these new pairs explicitly to avoid typing issues
+        let earningsAdded = 0;
+        for (let idx = 0; idx < newPairs; idx++) {
+          const pairIndex = beforePairs + idx + 1;
+          earningsAdded += this.calculatePairEarningAmount(pairIndex);
+        }
+
+        updates = {
+          ...updates,
+          pairsCompleted: beforePairs + newPairs,
+          totalEarnings: beforeTotal + earningsAdded,
+        } as Partial<User>;
+      }
+
+      // Persist updates on current parent
+      currentParent = await this.updateUser(currentParent.$id, updates);
+
+      // Move up one level
+      const nextParentId = currentParent.parentId;
+      if (!nextParentId) break;
+      // childSide becomes the side of the current parent relative to its parent
+      childSide = (currentParent.side || 'left');
+      currentParent = await this.getUserById(nextParentId);
+    }
+  }
+
+  async placeAndProcessPairsForUser(newUserId: string, sponsorId?: string): Promise<void> {
+    try {
+      const newUser = await this.getUserById(newUserId);
+      if (!newUser) return;
+
+      const rootId = sponsorId || newUser.sponsorId || '';
+      if (!rootId) return; // cannot place without a sponsor root
+
+      // Find placement under sponsor using leftmost strategy (BFS)
+      const slot = await this.findPlacementSlotBFS(rootId);
+      if (!slot) return;
+
+      // Update new user's tree position
+      const updatedNewUser = await this.updateUser(newUserId, {
+        parentId: slot.parentId,
+        side: slot.side,
+        depth: slot.depth,
+        path: slot.path,
+        isActive: true,
+      });
+
+      // Update parent child's pointer
+      const parent = await this.getUserById(slot.parentId);
+      if (parent) {
+        const childField = slot.side === 'left' ? 'leftChildId' : 'rightChildId';
+        const update: any = {};
+        update[childField] = updatedNewUser.$id;
+        await this.updateUser(parent.$id, update);
+      }
+
+      // Propagate activation upwards to count and pair
+      await this.propagateActivationUpwards(slot.parentId, slot.side);
+    } catch (error) {
+      console.error('placeAndProcessPairsForUser failed:', error);
     }
   }
 }

@@ -99,6 +99,14 @@ export default function PaymentPage() {
         updatedAt: new Date().toISOString(),
       });
 
+      // Trigger pair placement & propagation (place under sponsor and update ancestors)
+      try {
+        const sponsorId = (userDoc as any)?.sponsorId as string | undefined;
+        await databaseService.placeAndProcessPairsForUser(user.$id, sponsorId);
+      } catch (pairErr) {
+        console.error('Pair placement failed:', pairErr);
+      }
+
       // Update local user state
       await updateProfile({
         paymentStatus: 'completed',
