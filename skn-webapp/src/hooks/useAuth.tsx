@@ -4,6 +4,7 @@ import { useState, useEffect, createContext, useContext, useCallback } from 'rea
 import { account, databases, DATABASE_ID, COLLECTIONS } from '@/lib/appwrite';
 import { ID, Query } from 'appwrite';
 import { User } from '@/types';
+import { databaseService } from '@/lib/database';
 
 interface AuthContextType {
   user: User | null;
@@ -738,6 +739,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       console.log('Appwrite account created:', newAccount);
 
+      // Resolve sponsor by referral code if provided
+      let resolvedSponsorId: string | undefined = undefined;
+      if (referralCode && referralCode.trim().length > 0) {
+        try {
+          const sponsor = await databaseService.getUserByReferralCode(referralCode.trim());
+          if (sponsor) {
+            resolvedSponsorId = sponsor.$id;
+            console.log('Resolved sponsor from referral code:', { referralCode, sponsorId: resolvedSponsorId });
+          } else {
+            console.log('No sponsor found for referral code. Proceeding without sponsor link.');
+          }
+        } catch (e) {
+          console.log('Failed to resolve sponsor by referral code, proceeding without:', e);
+        }
+      }
+      
       // Create user profile in database with minimal attributes
       const userData = {
         name,
@@ -755,7 +772,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         leftActiveCount: 0,
         rightActiveCount: 0,
         pairsCompleted: 0,
-        sponsorId: referralCode || undefined,
+        sponsorId: resolvedSponsorId,
       };
       
       // Create the user document in the database
@@ -773,6 +790,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         );
         
         console.log('User document created successfully:', newUserDoc);
+
+        // If referred, create a referral record marking registration
+        if (resolvedSponsorId) {
+          try {
+            await databaseService.createReferral({
+              referralCode: referralCode!.trim(),
+              sponsorId: resolvedSponsorId,
+              prospectEmail: email,
+              status: 'registered',
+              registeredUserId: newAccount.$id,
+              createdAt: new Date().toISOString(),
+            });
+            console.log('Referral record created for registration');
+          } catch (refErr) {
+            console.error('Failed to create referral record:', refErr);
+          }
+        }
+        
         console.log('Registration successful - user document created in database');
         
         // Now automatically log the user in
@@ -799,8 +834,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             fullError: loginError
           });
           
-          // Even if auto-login fails, registration was successful
-          // User can manually login
           console.log('Auto-login failed but registration successful - user can login manually');
           return { success: true, user: null };
         }
@@ -814,11 +847,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           fullError: dbError
         });
         
-        // Even if database creation fails, the Appwrite account was created
-        // User can still login, and the document will be created during login
         console.log('User account created but database document failed - will be created on first login');
         
-        // Try to auto-login anyway
         try {
           console.log('Attempting auto-login despite database failure...');
           await account.createEmailPasswordSession(email, password);

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../hooks/useAuth';
 import { Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react';
 import { cn, isValidEmail } from '@/lib/utils';
+import { databaseService } from '@/lib/database';
 
 function RegisterForm() {
   const [formData, setFormData] = useState({
@@ -35,6 +36,32 @@ function RegisterForm() {
     if (referralCode) {
       console.log('Referral code detected from URL:', referralCode);
       setFormData(prev => ({ ...prev, referralCode }));
+
+      // Record a single click per session for this referral code
+      const key = `ref_click_${referralCode}`;
+      if (typeof window !== 'undefined' && !sessionStorage.getItem(key)) {
+        (async () => {
+          try {
+            const sponsor = await databaseService.getUserByReferralCode(referralCode.trim());
+            if (sponsor) {
+              await databaseService.createReferral({
+                referralCode: referralCode.trim(),
+                sponsorId: sponsor.$id,
+                prospectEmail: null,
+                status: 'clicked',
+                registeredUserId: null,
+                createdAt: new Date().toISOString(),
+              } as any);
+              sessionStorage.setItem(key, '1');
+              console.log('Referral click recorded');
+            } else {
+              console.log('No sponsor found for referral code on click');
+            }
+          } catch (err) {
+            console.error('Failed to record referral click:', err);
+          }
+        })();
+      }
     }
   }, [searchParams]);
 

@@ -90,6 +90,20 @@ export class DatabaseService {
     }
   }
 
+  async getUserByReferralCode(referralCode: string): Promise<User | null> {
+    try {
+      const result = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.USERS,
+        [Query.equal('referralCode', referralCode)]
+      );
+      return result.documents.length > 0 ? (result.documents[0] as unknown as User) : null;
+    } catch (error) {
+      console.error('Error getting user by referral code:', error);
+      return null;
+    }
+  }
+
   // Referrals Collection Operations
   async createReferral(referralData: Omit<Referral, '$id'>): Promise<Referral> {
     try {

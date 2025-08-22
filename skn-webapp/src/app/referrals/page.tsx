@@ -31,6 +31,8 @@ export default function ReferralsPage() {
   const [referralTree, setReferralTree] = useState<ReferralData[]>([]);
   const [referralCode, setReferralCode] = useState('');
   const [dataLoading, setDataLoading] = useState(true);
+  const [clickCount, setClickCount] = useState(0);
+  const [registrationCount, setRegistrationCount] = useState(0);
 
   const loadReferralData = useCallback(async () => {
     if (!user) return;
@@ -45,6 +47,13 @@ export default function ReferralsPage() {
       // Load referral tree (first 5 levels)
       const tree = await databaseService.getReferralTree(user.$id, 5);
       setReferralTree(tree);
+
+      // Load referral events (clicks and registrations) for funnel metrics
+      const events = await databaseService.getReferralsBySponsorId(user.$id);
+      const clicks = events.filter((e: any) => e.status === 'clicked').length;
+      const regs = events.filter((e: any) => e.status === 'registered').length;
+      setClickCount(clicks);
+      setRegistrationCount(regs);
       
     } catch (error) {
       console.error('Error loading referral data:', error);
@@ -240,6 +249,20 @@ export default function ReferralsPage() {
                     </div>
                     <div className="text-yellow-800 font-medium text-sm sm:text-base">Pending</div>
                     <div className="text-yellow-600 text-xs sm:text-sm">Awaiting payment</div>
+                  </div>
+                </div>
+
+                {/* Referral Funnel */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6">
+                  <div className="text-center p-4 sm:p-6 bg-white border border-gray-200 rounded-lg">
+                    <div className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{clickCount}</div>
+                    <div className="text-gray-700 font-medium text-sm sm:text-base">Referral Link Clicks</div>
+                    <div className="text-gray-500 text-xs sm:text-sm">Unique clicks recorded</div>
+                  </div>
+                  <div className="text-center p-4 sm:p-6 bg-white border border-gray-200 rounded-lg">
+                    <div className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{registrationCount}</div>
+                    <div className="text-gray-700 font-medium text-sm sm:text-base">Registrations from Referrals</div>
+                    <div className="text-gray-500 text-xs sm:text-sm">Signed up using your code</div>
                   </div>
                 </div>
 
