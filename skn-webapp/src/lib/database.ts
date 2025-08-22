@@ -447,6 +447,7 @@ export class DatabaseService {
       const beforeRight = currentParent.rightActiveCount || 0;
       const beforePairs = currentParent.pairsCompleted || 0;
       const beforeTotal = currentParent.totalEarnings || 0;
+      const beforeStarLevel = currentParent.starLevel || 0;
 
       const newLeft = childSide === 'left' ? beforeLeft + 1 : beforeLeft;
       const newRight = childSide === 'right' ? beforeRight + 1 : beforeRight;
@@ -509,6 +510,36 @@ export class DatabaseService {
         } as Partial<User>;
       }
 
+      // Check for star level progression
+      const newPairsCompleted = (currentParent.pairsCompleted || 0) + newPairs;
+      const newStarLevel = this.calculateStarLevel(newPairsCompleted);
+      
+      if (newStarLevel > beforeStarLevel) {
+        // User has achieved a new star level
+        const starReward = this.calculateStarLevelReward(newStarLevel);
+        
+        try {
+          await this.createEarning({
+            userId: currentParent.$id,
+            sourceType: 'star_reward',
+            sourceId: `star_${newStarLevel}`,
+            amount: starReward,
+            currency: 'PKR',
+            balanceAfter: undefined,
+            note: `Star Level ${newStarLevel} achievement reward`,
+            createdAt: new Date().toISOString(),
+          } as unknown as Omit<Earning, '$id'>);
+        } catch (e) {
+          console.error('Failed to create star level earning record:', e);
+        }
+
+        updates = {
+          ...updates,
+          starLevel: newStarLevel,
+          totalEarnings: (updates.totalEarnings || beforeTotal) + starReward,
+        } as Partial<User>;
+      }
+
       // Persist updates on current parent
       currentParent = await this.updateUser(currentParent.$id, updates);
 
@@ -521,6 +552,95 @@ export class DatabaseService {
     }
   }
 
+  // Star level calculation based on pairs completed
+  private calculateStarLevel(pairsCompleted: number): number {
+    if (pairsCompleted >= 1000) return 12; // Diamond
+    if (pairsCompleted >= 500) return 11;  // Platinum
+    if (pairsCompleted >= 250) return 10;  // Gold
+    if (pairsCompleted >= 100) return 9;   // Silver
+    if (pairsCompleted >= 50) return 8;    // Bronze
+    if (pairsCompleted >= 25) return 7;    // Ruby
+    if (pairsCompleted >= 15) return 6;    // Emerald
+    if (pairsCompleted >= 10) return 5;    // Sapphire
+    if (pairsCompleted >= 7) return 4;     // Amethyst
+    if (pairsCompleted >= 5) return 3;     // Topaz
+    if (pairsCompleted >= 3) return 2;     // Pearl
+    if (pairsCompleted >= 1) return 1;     // Crystal
+    return 0; // No star level
+  }
+
+  // Star level reward calculation
+  private calculateStarLevelReward(starLevel: number): number {
+    const rewards = {
+      1: 500,      // Crystal
+      2: 1000,     // Pearl
+      3: 2500,     // Topaz
+      4: 5000,     // Amethyst
+      5: 10000,    // Sapphire
+      6: 25000,    // Emerald
+      7: 50000,    // Ruby
+      8: 100000,   // Bronze
+      9: 250000,   // Silver
+      10: 500000,  // Gold
+      11: 1000000, // Platinum
+      12: 2000000, // Diamond
+    };
+    return rewards[starLevel as keyof typeof rewards] || 0;
+  }
+
+  // Initialize star levels in database
+  async initializeStarLevels(): Promise<void> {
+    try {
+      const starLevels = [
+        { level: 1, requiredPairs: 1, rewardAmount: 500, title: 'Crystal', isActive: true },
+        { level: 2, requiredPairs: 3, rewardAmount: 1000, title: 'Pearl', isActive: true },
+        { level: 3, requiredPairs: 5, rewardAmount: 2500, title: 'Topaz', isActive: true },
+        { level: 4, requiredPairs: 7, rewardAmount: 5000, title: 'Amethyst', isActive: true },
+        { level: 5, requiredPairs: 10, rewardAmount: 10000, title: 'Sapphire', isActive: true },
+        { level: 6, requiredPairs: 15, rewardAmount: 25000, title: 'Emerald', isActive: true },
+        { level: 7, requiredPairs: 25, rewardAmount: 50000, title: 'Ruby', isActive: true },
+        { level: 8, requiredPairs: 50, rewardAmount: 100000, title: 'Bronze', isActive: true },
+        { level: 9, requiredPairs: 100, rewardAmount: 250000, title: 'Silver', isActive: true },
+        { level: 10, requiredPairs: 250, rewardAmount: 500000, title: 'Gold', isActive: true },
+        { level: 11, requiredPairs: 500, rewardAmount: 1000000, title: 'Platinum', isActive: true },
+        { level: 12, requiredPairs: 1000, rewardAmount: 2000000, title: 'Diamond', isActive: true },
+      ];
+
+      for (const starLevel of starLevels) {
+        try {
+          await databases.createDocument(
+            DATABASE_ID,
+            COLLECTIONS.STAR_ACHIEVEMENTS,
+            ID.unique(),
+            {
+              ...starLevel,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            }
+          );
+        } catch (error: any) {
+          // Ignore if star level already exists
+          if (!error.message.includes('already exists')) {
+            console.error('Error creating star level:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error initializing star levels:', error);
+    }
+  }
+
+  // Get placement strategy from system settings
+  private async getPlacementStrategy(): Promise<'leftmost' | 'balanced'> {
+    try {
+      const settings = await this.getSystemSettings();
+      return settings?.placementStrategy || 'leftmost';
+    } catch (error) {
+      console.error('Error getting placement strategy:', error);
+      return 'leftmost'; // Default fallback
+    }
+  }
+
   async placeAndProcessPairsForUser(newUserId: string, sponsorId?: string): Promise<void> {
     try {
       const newUser = await this.getUserById(newUserId);
@@ -529,8 +649,17 @@ export class DatabaseService {
       const rootId = sponsorId || newUser.sponsorId || '';
       if (!rootId) return; // cannot place without a sponsor root
 
-      // Find placement under sponsor using leftmost strategy (BFS)
-      const slot = await this.findPlacementSlotBFS(rootId);
+      // Get placement strategy from system settings
+      const strategy = await this.getPlacementStrategy();
+      
+      // Find placement under sponsor using the configured strategy
+      let slot;
+      if (strategy === 'balanced') {
+        slot = await this.findPlacementSlotBalanced(rootId);
+      } else {
+        slot = await this.findPlacementSlotBFS(rootId); // Default leftmost strategy
+      }
+      
       if (!slot) return;
 
       // Update new user's tree position
@@ -555,6 +684,189 @@ export class DatabaseService {
       await this.propagateActivationUpwards(slot.parentId, slot.side);
     } catch (error) {
       console.error('placeAndProcessPairsForUser failed:', error);
+    }
+  }
+
+  // Balanced placement strategy - places users to maintain tree balance
+  private async findPlacementSlotBalanced(rootUserId: string): Promise<{ parentId: string; side: 'left' | 'right'; depth: number; path: string } | null> {
+    const queue: Array<{ id: string; depth: number; path: string }> = [{ id: rootUserId, depth: 0, path: rootUserId }];
+    
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const parent = await this.getUserById(current.id);
+      if (!parent) continue;
+
+      const leftChildId = (parent as any).leftChildId as string | undefined;
+      const rightChildId = (parent as any).rightChildId as string | undefined;
+
+      // If either side is empty, place there
+      if (!leftChildId) {
+        return { parentId: parent.$id, side: 'left', depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` };
+      }
+      if (!rightChildId) {
+        return { parentId: parent.$id, side: 'right', depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` };
+      }
+
+      // Both sides have children, choose the side with fewer total descendants
+      const leftDescendants = await this.countDescendants(leftChildId);
+      const rightDescendants = await this.countDescendants(rightChildId);
+
+      // Enqueue the side with fewer descendants first (for balanced placement)
+      if (leftDescendants <= rightDescendants) {
+        queue.unshift({ id: leftChildId, depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` });
+        queue.push({ id: rightChildId, depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` });
+      } else {
+        queue.unshift({ id: rightChildId, depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` });
+        queue.push({ id: leftChildId, depth: (parent.depth || 0) + 1, path: `${current.path}/${parent.$id}` });
+      }
+    }
+    return null;
+  }
+
+  // Count total descendants of a user (recursive)
+  private async countDescendants(userId: string): Promise<number> {
+    try {
+      const user = await this.getUserById(userId);
+      if (!user) return 0;
+
+      const leftChildId = (user as any).leftChildId as string | undefined;
+      const rightChildId = (user as any).rightChildId as string | undefined;
+
+      let count = 1; // Count self
+      if (leftChildId) {
+        count += await this.countDescendants(leftChildId);
+      }
+      if (rightChildId) {
+        count += await this.countDescendants(rightChildId);
+      }
+      return count;
+    } catch (error) {
+      console.error('Error counting descendants:', error);
+      return 0;
+    }
+  }
+
+  // Initialize system settings
+  async initializeSystemSettings(): Promise<void> {
+    try {
+      const settings = {
+        joiningFee: 850,
+        currency: 'PKR',
+        pairEarning: 200,
+        firstPairEarning: 400,
+        regularPairEarning: 200,
+        after100PairEarning: 100,
+        placementStrategy: 'leftmost' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.NETWORK_STATS,
+        ID.unique(),
+        settings
+      );
+    } catch (error: any) {
+      // Ignore if settings already exist
+      if (!error.message.includes('already exists')) {
+        console.error('Error creating system settings:', error);
+      }
+    }
+  }
+
+  // Comprehensive tree analysis for monitoring
+  async analyzeTreeHealth(userId: string): Promise<{
+    totalMembers: number;
+    activeMembers: number;
+    leftSideMembers: number;
+    rightSideMembers: number;
+    treeDepth: number;
+    balanceRatio: number; // 0-1, 1 being perfectly balanced
+    pairsCompleted: number;
+    totalEarnings: number;
+    averageEarningsPerMember: number;
+    starLevelDistribution: Record<number, number>;
+  }> {
+    try {
+      const user = await this.getUserById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Get all descendants
+      const descendants = await this.getAllDescendants(userId);
+      const activeDescendants = descendants.filter(d => d.isActive);
+
+      // Calculate tree depth
+      const treeDepth = Math.max(...descendants.map(d => d.depth || 0));
+
+      // Calculate balance ratio
+      const leftSideMembers = user.leftActiveCount || 0;
+      const rightSideMembers = user.rightActiveCount || 0;
+      const totalActive = leftSideMembers + rightSideMembers;
+      const balanceRatio = totalActive > 0 ? Math.min(leftSideMembers, rightSideMembers) / Math.max(leftSideMembers, rightSideMembers) : 1;
+
+      // Calculate star level distribution
+      const starLevelDistribution: Record<number, number> = {};
+      for (const descendant of activeDescendants) {
+        const level = descendant.starLevel || 0;
+        starLevelDistribution[level] = (starLevelDistribution[level] || 0) + 1;
+      }
+
+      // Calculate average earnings
+      const totalEarnings = activeDescendants.reduce((sum, d) => sum + (d.totalEarnings || 0), 0);
+      const averageEarningsPerMember = activeDescendants.length > 0 ? totalEarnings / activeDescendants.length : 0;
+
+      return {
+        totalMembers: descendants.length,
+        activeMembers: activeDescendants.length,
+        leftSideMembers,
+        rightSideMembers,
+        treeDepth,
+        balanceRatio,
+        pairsCompleted: user.pairsCompleted || 0,
+        totalEarnings: user.totalEarnings || 0,
+        averageEarningsPerMember,
+        starLevelDistribution,
+      };
+    } catch (error) {
+      console.error('Error analyzing tree health:', error);
+      throw error;
+    }
+  }
+
+  // Get all descendants of a user (recursive)
+  private async getAllDescendants(userId: string): Promise<User[]> {
+    try {
+      const user = await this.getUserById(userId);
+      if (!user) return [];
+
+      const leftChildId = (user as any).leftChildId as string | undefined;
+      const rightChildId = (user as any).rightChildId as string | undefined;
+
+      let descendants: User[] = [];
+      
+      if (leftChildId) {
+        const leftChild = await this.getUserById(leftChildId);
+        if (leftChild) {
+          descendants.push(leftChild);
+          descendants = descendants.concat(await this.getAllDescendants(leftChildId));
+        }
+      }
+      
+      if (rightChildId) {
+        const rightChild = await this.getUserById(rightChildId);
+        if (rightChild) {
+          descendants.push(rightChild);
+          descendants = descendants.concat(await this.getAllDescendants(rightChildId));
+        }
+      }
+
+      return descendants;
+    } catch (error) {
+      console.error('Error getting descendants:', error);
+      return [];
     }
   }
 }
