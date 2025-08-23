@@ -457,11 +457,17 @@ export class DatabaseService {
         rightActiveCount: newRight,
       } as Partial<User>;
 
-      // Determine new pairs formed
-      const possiblePairs = Math.min(newLeft, newRight);
+      // Determine new pairs formed based on direct referrals, not tree placement
+      const directReferrals = await this.getDirectReferrals(currentParent.$id);
+      const directReferralCount = directReferrals.length;
+      const possiblePairs = Math.floor(directReferralCount / 2);
       let newPairs = Math.max(0, possiblePairs - beforePairs);
 
       if (newPairs > 0) {
+        // For each new pair, both sides get 1 pair
+        const newLeftPairs = newPairs;
+        const newRightPairs = newPairs;
+
         // Create pairs and earnings
         for (let i = 1; i <= newPairs; i++) {
           const nextPairIndex = (currentParent.pairsCompleted || 0) + i;
@@ -470,7 +476,7 @@ export class DatabaseService {
           try {
             await this.createPair({
               userId: currentParent.$id,
-              pairIndex: nextPairIndex,
+              pairNumber: nextPairIndex,
               leftUserId: (currentParent as any).leftChildId || '',
               rightUserId: (currentParent as any).rightChildId || '',
               completedAt: new Date().toISOString(),
@@ -503,16 +509,48 @@ export class DatabaseService {
           earningsAdded += this.calculatePairEarningAmount(pairIndex);
         }
 
+        const finalLeftPairs = (currentParent.leftPairs || 0) + newLeftPairs;
+        const finalRightPairs = (currentParent.rightPairs || 0) + newRightPairs;
+
         updates = {
           ...updates,
-          pairsCompleted: beforePairs + newPairs,
+          leftPairs: finalLeftPairs,
+          rightPairs: finalRightPairs,
+          pairsCompleted: Math.min(finalLeftPairs, finalRightPairs),
           totalEarnings: beforeTotal + earningsAdded,
         } as Partial<User>;
+
+        // Give sponsor bonus to upper levels (MLM structure)
+        if (newPairs > 0 && currentParent.sponsorId) {
+          try {
+            await this.createEarning({
+              userId: currentParent.sponsorId,
+              sourceType: 'sponsor_bonus',
+              sourceId: `sponsor_bonus_${currentParent.$id}_pair_${beforePairs + 1}`,
+              amount: 100, // Sponsor bonus amount
+              currency: 'PKR',
+              balanceAfter: undefined,
+              note: `Sponsor bonus from ${currentParent.name}'s pair completion`,
+              createdAt: new Date().toISOString(),
+            } as unknown as Omit<Earning, '$id'>);
+
+            // Update sponsor's total earnings
+            const sponsor = await this.getUserById(currentParent.sponsorId);
+            if (sponsor) {
+              await this.updateUser(sponsor.$id, {
+                totalEarnings: (sponsor.totalEarnings || 0) + 100,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to create sponsor bonus earning record:', e);
+          }
+        }
       }
 
-      // Check for star level progression
-      const newPairsCompleted = (currentParent.pairsCompleted || 0) + newPairs;
-      const newStarLevel = this.calculateStarLevel(newPairsCompleted);
+      // Check for star level progression based on left/right pair counts
+      const newLeftPairs = updates.leftPairs || (currentParent.leftPairs || 0);
+      const newRightPairs = updates.rightPairs || (currentParent.rightPairs || 0);
+      const newStarLevel = this.calculateStarLevel(newLeftPairs, newRightPairs);
       
       if (newStarLevel > beforeStarLevel) {
         // User has achieved a new star level
@@ -552,38 +590,40 @@ export class DatabaseService {
     }
   }
 
-  // Star level calculation based on pairs completed
-  private calculateStarLevel(pairsCompleted: number): number {
-    if (pairsCompleted >= 1000) return 12; // Diamond
-    if (pairsCompleted >= 500) return 11;  // Platinum
-    if (pairsCompleted >= 250) return 10;  // Gold
-    if (pairsCompleted >= 100) return 9;   // Silver
-    if (pairsCompleted >= 50) return 8;    // Bronze
-    if (pairsCompleted >= 25) return 7;    // Ruby
-    if (pairsCompleted >= 15) return 6;    // Emerald
-    if (pairsCompleted >= 10) return 5;    // Sapphire
-    if (pairsCompleted >= 7) return 4;     // Amethyst
-    if (pairsCompleted >= 5) return 3;     // Topaz
-    if (pairsCompleted >= 3) return 2;     // Pearl
-    if (pairsCompleted >= 1) return 1;     // Crystal
+  // Star level calculation based on left/right pair counts (not total pairs)
+  private calculateStarLevel(leftPairs: number, rightPairs: number): number {
+    const minPairs = Math.min(leftPairs, rightPairs);
+    
+    if (minPairs >= 50000) return 12; // Diamond
+    if (minPairs >= 40000) return 11; // Platinum
+    if (minPairs >= 30000) return 10; // Gold
+    if (minPairs >= 20000) return 9;  // Silver
+    if (minPairs >= 10000) return 8;  // Bronze
+    if (minPairs >= 5000) return 7;   // Ruby
+    if (minPairs >= 2500) return 6;   // Emerald
+    if (minPairs >= 1100) return 5;   // Sapphire
+    if (minPairs >= 550) return 4;    // Amethyst
+    if (minPairs >= 100) return 3;    // Topaz
+    if (minPairs >= 30) return 2;     // Pearl
+    if (minPairs >= 10) return 1;     // Crystal
     return 0; // No star level
   }
 
-  // Star level reward calculation
+  // Star level reward calculation (corrected amounts)
   private calculateStarLevelReward(starLevel: number): number {
     const rewards = {
-      1: 500,      // Crystal
-      2: 1000,     // Pearl
-      3: 2500,     // Topaz
-      4: 5000,     // Amethyst
-      5: 10000,    // Sapphire
-      6: 25000,    // Emerald
-      7: 50000,    // Ruby
-      8: 100000,   // Bronze
-      9: 250000,   // Silver
-      10: 500000,  // Gold
-      11: 1000000, // Platinum
-      12: 2000000, // Diamond
+      1: 500,       // Crystal (10/10 pairs)
+      2: 1500,      // Pearl (30/30 pairs)
+      3: 3000,      // Topaz (100/100 pairs)
+      4: 25000,     // Amethyst (550/550 pairs)
+      5: 35000,     // Sapphire (1100/1100 pairs)
+      6: 60000,     // Emerald (2500/2500 pairs)
+      7: 140000,    // Ruby (5000/5000 pairs)
+      8: 300000,    // Bronze (10000/10000 pairs)
+      9: 600000,    // Silver (20000/20000 pairs)
+      10: 1000000,  // Gold (30000/30000 pairs)
+      11: 1500000,  // Platinum (40000/40000 pairs)
+      12: 2000000,  // Diamond (50000/50000 pairs)
     };
     return rewards[starLevel as keyof typeof rewards] || 0;
   }
@@ -592,18 +632,18 @@ export class DatabaseService {
   async initializeStarLevels(): Promise<void> {
     try {
       const starLevels = [
-        { level: 1, requiredPairs: 1, rewardAmount: 500, title: 'Crystal', isActive: true },
-        { level: 2, requiredPairs: 3, rewardAmount: 1000, title: 'Pearl', isActive: true },
-        { level: 3, requiredPairs: 5, rewardAmount: 2500, title: 'Topaz', isActive: true },
-        { level: 4, requiredPairs: 7, rewardAmount: 5000, title: 'Amethyst', isActive: true },
-        { level: 5, requiredPairs: 10, rewardAmount: 10000, title: 'Sapphire', isActive: true },
-        { level: 6, requiredPairs: 15, rewardAmount: 25000, title: 'Emerald', isActive: true },
-        { level: 7, requiredPairs: 25, rewardAmount: 50000, title: 'Ruby', isActive: true },
-        { level: 8, requiredPairs: 50, rewardAmount: 100000, title: 'Bronze', isActive: true },
-        { level: 9, requiredPairs: 100, rewardAmount: 250000, title: 'Silver', isActive: true },
-        { level: 10, requiredPairs: 250, rewardAmount: 500000, title: 'Gold', isActive: true },
-        { level: 11, requiredPairs: 500, rewardAmount: 1000000, title: 'Platinum', isActive: true },
-        { level: 12, requiredPairs: 1000, rewardAmount: 2000000, title: 'Diamond', isActive: true },
+        { level: 1, requiredPairs: 10, rewardAmount: 500, title: 'Crystal', isActive: true },
+        { level: 2, requiredPairs: 30, rewardAmount: 1500, title: 'Pearl', isActive: true },
+        { level: 3, requiredPairs: 100, rewardAmount: 3000, title: 'Topaz', isActive: true },
+        { level: 4, requiredPairs: 550, rewardAmount: 25000, title: 'Amethyst', isActive: true },
+        { level: 5, requiredPairs: 1100, rewardAmount: 35000, title: 'Sapphire', isActive: true },
+        { level: 6, requiredPairs: 2500, rewardAmount: 60000, title: 'Emerald', isActive: true },
+        { level: 7, requiredPairs: 5000, rewardAmount: 140000, title: 'Ruby', isActive: true },
+        { level: 8, requiredPairs: 10000, rewardAmount: 300000, title: 'Bronze', isActive: true },
+        { level: 9, requiredPairs: 20000, rewardAmount: 600000, title: 'Silver', isActive: true },
+        { level: 10, requiredPairs: 30000, rewardAmount: 1000000, title: 'Gold', isActive: true },
+        { level: 11, requiredPairs: 40000, rewardAmount: 1500000, title: 'Platinum', isActive: true },
+        { level: 12, requiredPairs: 50000, rewardAmount: 2000000, title: 'Diamond', isActive: true },
       ];
 
       for (const starLevel of starLevels) {
@@ -649,16 +689,8 @@ export class DatabaseService {
       const rootId = sponsorId || newUser.sponsorId || '';
       if (!rootId) return; // cannot place without a sponsor root
 
-      // Get placement strategy from system settings
-      const strategy = await this.getPlacementStrategy();
-      
-      // Find placement under sponsor using the configured strategy
-      let slot;
-      if (strategy === 'balanced') {
-        slot = await this.findPlacementSlotBalanced(rootId);
-      } else {
-        slot = await this.findPlacementSlotBFS(rootId); // Default leftmost strategy
-      }
+      // Find placement directly under the sponsor (flat structure)
+      const slot = await this.findPlacementSlotUnderSponsor(rootId);
       
       if (!slot) return;
 
@@ -684,6 +716,44 @@ export class DatabaseService {
       await this.propagateActivationUpwards(slot.parentId, slot.side);
     } catch (error) {
       console.error('placeAndProcessPairsForUser failed:', error);
+    }
+  }
+
+  // Find placement slot directly under sponsor (flat structure)
+  private async findPlacementSlotUnderSponsor(sponsorId: string): Promise<{ parentId: string; side: 'left' | 'right'; depth: number; path: string } | null> {
+    try {
+      const sponsor = await this.getUserById(sponsorId);
+      if (!sponsor) return null;
+
+      // Use BFS to find the next available slot, but prioritize direct placement under sponsor
+      const leftChildId = (sponsor as any).leftChildId as string | undefined;
+      const rightChildId = (sponsor as any).rightChildId as string | undefined;
+
+      // If left side is empty, place there
+      if (!leftChildId) {
+        return { 
+          parentId: sponsor.$id, 
+          side: 'left', 
+          depth: (sponsor.depth || 0) + 1, 
+          path: `${sponsorId}/${sponsor.$id}` 
+        };
+      }
+
+      // If right side is empty, place there
+      if (!rightChildId) {
+        return { 
+          parentId: sponsor.$id, 
+          side: 'right', 
+          depth: (sponsor.depth || 0) + 1, 
+          path: `${sponsorId}/${sponsor.$id}` 
+        };
+      }
+
+      // Both sides are full, continue with BFS placement
+      return await this.findPlacementSlotBFS(sponsorId);
+    } catch (error) {
+      console.error('Error finding placement slot under sponsor:', error);
+      return null;
     }
   }
 

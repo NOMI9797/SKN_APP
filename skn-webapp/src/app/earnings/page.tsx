@@ -14,7 +14,7 @@ import Header from '../../components/Header';
 
 interface EarningData {
   $id: string;
-  sourceType: 'pair' | 'star_reward' | 'manual';
+  sourceType: 'pair' | 'star_reward' | 'sponsor_bonus' | 'manual';
   sourceId: string;
   amount: number;
   currency: string;
@@ -85,6 +85,7 @@ export default function EarningsPage() {
     switch (sourceType) {
       case 'pair': return 'Pair Completion';
       case 'star_reward': return 'Star Level Reward';
+      case 'sponsor_bonus': return 'Sponsor Bonus';
       case 'manual': return 'Manual Adjustment';
       default: return sourceType;
     }
@@ -94,6 +95,7 @@ export default function EarningsPage() {
     switch (sourceType) {
       case 'pair': return 'bg-blue-100 text-blue-800';
       case 'star_reward': return 'bg-yellow-100 text-yellow-800';
+      case 'sponsor_bonus': return 'bg-green-100 text-green-800';
       case 'manual': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }

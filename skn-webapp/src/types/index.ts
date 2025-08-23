@@ -53,7 +53,7 @@ export interface Payment {
 export interface Pair {
   $id: string;
   userId: string; // beneficiary
-  pairIndex: number; // unique per user
+  pairNumber: number; // unique per user
   leftUserId: string;
   rightUserId: string;
   completedAt: string;
@@ -63,7 +63,7 @@ export interface Pair {
 export interface Earning {
   $id: string;
   userId: string;
-  sourceType: 'pair' | 'star_reward' | 'manual';
+  sourceType: 'pair' | 'star_reward' | 'sponsor_bonus' | 'manual';
   sourceId: string; // pairId or starLevelId
   amount: number;
   currency: string; // default 'PKR'
