@@ -108,10 +108,10 @@ export default function DashboardPage() {
       return;
     }
 
-    if (user && user.paymentStatus !== 'completed') {
-      console.log('User payment not completed, redirecting to payment. Status:', user.paymentStatus);
-      router.push('/payment');
-      return;
+    // Let user login first, then handle payment status gracefully
+    if (user) {
+      console.log('User authenticated, loading dashboard data. Payment status:', user.paymentStatus);
+      loadDashboardData();
     }
 
     if (user) {
@@ -146,23 +146,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  if (user.paymentStatus !== 'completed') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <CheckCircleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Registration First</h2>
-          <p className="text-gray-600 mb-4">Please complete your payment to access the dashboard</p>
-          <button
-            onClick={() => router.push('/payment')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Complete Payment
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -305,11 +289,11 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right ml-2 flex-shrink-0">
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      referral.paymentStatus === 'completed' 
+                                              referral.paymentStatus === 'approved' 
                         ? 'bg-green-100 text-green-800' 
                         : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {referral.paymentStatus === 'completed' ? 'Active' : 'Pending Payment'}
+                                              {referral.paymentStatus === 'approved' ? 'Active' : 'Pending Payment'}
                     </span>
                   </div>
                 </div>

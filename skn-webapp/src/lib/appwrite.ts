@@ -24,12 +24,20 @@ export const COLLECTIONS = {
   PAYMENTS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_PAYMENTS || 'payments',
   USER_SESSIONS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_USER_SESSIONS || 'user_sessions',
   NETWORK_STATS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_NETWORK_STATS || 'network_stats',
+  // New collections for payment and withdrawal system
+  PAYMENT_REQUESTS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_PAYMENT_REQUESTS || 'payment_requests',
+  WITHDRAWAL_REQUESTS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_WITHDRAWAL_REQUESTS || 'withdrawal_requests',
+  ADMIN_USERS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_ADMIN_USERS || 'admin_users',
+  PINS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_PINS || 'pins',
+  NOTIFICATIONS: process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_NOTIFICATIONS || 'notifications',
 } as const;
 
 // Storage bucket IDs
 export const BUCKETS = {
   PROFILE_IMAGES: process.env.NEXT_PUBLIC_APPWRITE_BUCKET_PROFILE_IMAGES || 'profile_images',
   PAYMENT_PROOFS: process.env.NEXT_PUBLIC_APPWRITE_BUCKET_PAYMENT_PROOFS || 'payment_proofs',
+  // Single bucket for all payment and withdrawal files
+  FILES: process.env.NEXT_PUBLIC_APPWRITE_BUCKET_FILES || 'files',
 } as const;
 
 // Business Logic Configuration

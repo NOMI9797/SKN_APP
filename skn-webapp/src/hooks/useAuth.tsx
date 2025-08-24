@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         totalEarnings: 0,
                         starLevel: 0,
                         registrationFee: 0,
-                        paymentStatus: 'pending',
+                        paymentStatus: 'not_submitted',
                         userId: currentUser.$id,
                         depth: 0,
                         leftActiveCount: 0,
@@ -162,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                       totalEarnings: 0,
                       starLevel: 0,
                       registrationFee: 0,
-                      paymentStatus: 'pending',
+                      paymentStatus: 'not_submitted',
                       leftActiveCount: 0,
                       rightActiveCount: 0,
                       pairsCompleted: 0,
@@ -388,13 +388,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
       }
     } finally {
+      console.log('checkUser: Setting loading to false');
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     checkUser();
-  }, [checkUser]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
@@ -766,13 +767,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         totalEarnings: 0,
         starLevel: 0,
         registrationFee: 0,
-        paymentStatus: 'pending',
+        paymentStatus: 'not_submitted',
+        paymentRequestId: null,
+        userType: 'user',
+        phone: '',
+        address: '',
+        joinDate: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        currentStarLevel: 0,
         userId: newAccount.$id,
         depth: 0,
         leftActiveCount: 0,
         rightActiveCount: 0,
         pairsCompleted: 0,
         sponsorId: resolvedSponsorId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       
       // Create the user document in the database
@@ -868,6 +878,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             starLevel: 0,
             registrationFee: 0,
             paymentStatus: 'pending',
+            paymentRequestId: null,
+            userType: 'user',
+            phone: '',
+            address: '',
+            joinDate: new Date().toISOString(),
+            lastLogin: new Date().toISOString(),
+            currentStarLevel: 0,
             leftActiveCount: 0,
             rightActiveCount: 0,
             pairsCompleted: 0,

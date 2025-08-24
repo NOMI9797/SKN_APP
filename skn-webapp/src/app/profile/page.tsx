@@ -14,6 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 import Header from '../../components/Header';
 
+
 export default function ProfilePage() {
   const { user, loading, updateProfile } = useAuth();
   const router = useRouter();
@@ -27,10 +28,7 @@ export default function ProfilePage() {
       return;
     }
 
-    if (user && user.paymentStatus !== 'completed') {
-      router.push('/payment');
-      return;
-    }
+    // Allow access to profile for all users
 
     if (user) {
       setEditName(user.name || '');
@@ -73,28 +71,50 @@ export default function ProfilePage() {
     return null;
   }
 
-  if (user.paymentStatus !== 'completed') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <CheckCircleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Registration First</h2>
-          <p className="text-gray-600 mb-4">Please complete your payment to access profile</p>
-          <button
-            onClick={() => router.push('/payment')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Complete Payment
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Show payment banner for inactive users
+  const showPaymentBanner = !user.isActive || user.paymentStatus !== 'approved';
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Payment Status Banner - Only show for inactive users */}
+        {showPaymentBanner && (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <div className="text-center">
+              <CheckCircleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Registration</h2>
+              <p className="text-gray-600 mb-6">
+                {user.paymentStatus === 'pending' && user.paymentRequestId
+                  ? 'Your payment request is under review. You will be notified once approved.'
+                  : user.paymentStatus === 'rejected'
+                  ? 'Your payment request was rejected. Please submit a new payment request.'
+                  : 'Please complete your payment to activate your account and access all features.'
+                }
+              </p>
+              
+              {user.paymentStatus === 'pending' && user.paymentRequestId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+                    <span className="text-blue-800">Payment request submitted and under review</span>
+                  </div>
+                </div>
+              )}
+              
+              {(user.paymentStatus === 'not_submitted' || user.paymentStatus === 'rejected' || (user.paymentStatus === 'pending' && !user.paymentRequestId)) && (
+                <button
+                  onClick={() => router.push('/payment')}
+                  className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Complete Payment
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
           <div className="flex items-center justify-between">
@@ -137,7 +157,7 @@ export default function ProfilePage() {
                   id="name"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white placeholder-gray-500"
                   placeholder="Enter your full name"
                 />
               </div>
@@ -151,7 +171,7 @@ export default function ProfilePage() {
                   id="email"
                   value={editEmail}
                   onChange={(e) => setEditEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white placeholder-gray-500"
                   placeholder="Enter your email address"
                 />
               </div>
@@ -208,11 +228,11 @@ export default function ProfilePage() {
                 <CheckCircleIcon className="h-6 w-6 text-blue-600" />
               </div>
               <div className="text-2xl font-bold text-blue-600 mb-1">
-                {user?.paymentStatus === 'completed' ? 'Active' : 'Pending'}
+                {user?.isActive && user?.paymentStatus === 'approved' ? 'Active' : 'Pending'}
               </div>
               <div className="text-blue-800 font-medium">Payment Status</div>
               <div className="text-blue-600 text-sm">
-                {user?.paymentStatus === 'completed' ? 'Registration Complete' : 'Payment Required'}
+                {user?.isActive && user?.paymentStatus === 'approved' ? 'Registration Complete' : 'Payment Required'}
               </div>
             </div>
 

@@ -9,10 +9,12 @@ import {
   ShareIcon,
   CheckCircleIcon,
   ClockIcon,
-  ArrowRightIcon
+  ArrowRightIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { databaseService } from '../../lib/database';
 import Header from '../../components/Header';
+
 
 interface ReferralData {
   $id: string;
@@ -69,14 +71,8 @@ export default function ReferralsPage() {
       return;
     }
 
-    if (user && user.paymentStatus !== 'completed') {
-      console.log('User payment not completed, redirecting to payment. Status:', user.paymentStatus);
-      router.push('/payment');
-      return;
-    }
-
     if (user) {
-      console.log('User authenticated and payment completed, loading referral data');
+      console.log('User authenticated, loading referral data');
       loadReferralData();
       setReferralCode(user.referralCode || '');
     }
@@ -133,28 +129,50 @@ export default function ReferralsPage() {
     return null;
   }
 
-  if (user.paymentStatus !== 'completed') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <CheckCircleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Registration First</h2>
-          <p className="text-gray-600 mb-4">Please complete your payment to access referrals</p>
-          <button
-            onClick={() => router.push('/payment')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Complete Payment
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Show payment banner for inactive users
+  const showPaymentBanner = !user.isActive || user.paymentStatus !== 'approved';
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Payment Status Banner - Only show for inactive users */}
+        {showPaymentBanner && (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <div className="text-center">
+              <ExclamationTriangleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Registration</h2>
+              <p className="text-gray-600 mb-6">
+                {user.paymentStatus === 'pending' && user.paymentRequestId
+                  ? 'Your payment request is under review. You will be notified once approved.'
+                  : user.paymentStatus === 'rejected'
+                  ? 'Your payment request was rejected. Please submit a new payment request.'
+                  : 'Please complete your payment to start building your referral network and earning rewards.'
+                }
+              </p>
+              
+              {user.paymentStatus === 'pending' && user.paymentRequestId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+                    <span className="text-blue-800">Payment request submitted and under review</span>
+                  </div>
+                </div>
+              )}
+              
+              {(user.paymentStatus === 'not_submitted' || user.paymentStatus === 'rejected' || (user.paymentStatus === 'pending' && !user.paymentRequestId)) && (
+                <button
+                  onClick={() => router.push('/payment')}
+                  className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Complete Payment
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
@@ -164,7 +182,9 @@ export default function ReferralsPage() {
             </div>
             <div className="text-center sm:text-right">
               <div className="text-sm text-gray-500">Total Referrals</div>
-              <div className="text-xl sm:text-2xl font-bold text-blue-600">{directReferrals.length}</div>
+              <div className="text-xl sm:text-2xl font-bold text-blue-600">
+                {user.isActive && user.paymentStatus === 'approved' ? directReferrals.length : '0'}
+              </div>
             </div>
           </div>
         </div>
@@ -238,7 +258,7 @@ export default function ReferralsPage() {
                   </div>
                   <div className="text-center p-4 sm:p-6 bg-green-50 rounded-lg">
                     <div className="text-2xl sm:text-3xl font-bold text-green-600 mb-2">
-                      {directReferrals.filter(r => r.paymentStatus === 'completed').length}
+                      {directReferrals.filter(r => r.paymentStatus === 'approved').length}
                     </div>
                     <div className="text-green-800 font-medium text-sm sm:text-base">Active Members</div>
                     <div className="text-green-600 text-xs sm:text-sm">Completed payments</div>

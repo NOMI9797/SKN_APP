@@ -12,6 +12,7 @@ import {
 import { databaseService } from '../../lib/database';
 import Header from '../../components/Header';
 
+
 interface EarningData {
   $id: string;
   sourceType: 'pair' | 'star_reward' | 'sponsor_bonus' | 'manual';
@@ -71,11 +72,6 @@ export default function EarningsPage() {
       return;
     }
 
-    if (user && user.paymentStatus !== 'completed') {
-      router.push('/payment');
-      return;
-    }
-
     if (user) {
       loadEarningsData();
     }
@@ -127,28 +123,50 @@ export default function EarningsPage() {
     return null;
   }
 
-  if (user.paymentStatus !== 'completed') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <CheckCircleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Registration First</h2>
-          <p className="text-gray-600 mb-4">Please complete your payment to view earnings</p>
-          <button
-            onClick={() => router.push('/payment')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Complete Payment
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Show payment banner for inactive users
+  const showPaymentBanner = !user.isActive || user.paymentStatus !== 'approved';
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Payment Status Banner - Only show for inactive users */}
+        {showPaymentBanner && (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <div className="text-center">
+              <CheckCircleIcon className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Registration</h2>
+              <p className="text-gray-600 mb-6">
+                {user.paymentStatus === 'pending' && user.paymentRequestId
+                  ? 'Your payment request is under review. You will be notified once approved.'
+                  : user.paymentStatus === 'rejected'
+                  ? 'Your payment request was rejected. Please submit a new payment request.'
+                  : 'Please complete your payment to start earning rewards and track your income.'
+                }
+              </p>
+              
+              {user.paymentStatus === 'pending' && user.paymentRequestId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
+                    <span className="text-blue-800">Payment request submitted and under review</span>
+                  </div>
+                </div>
+              )}
+              
+              {(user.paymentStatus === 'not_submitted' || user.paymentStatus === 'rejected' || (user.paymentStatus === 'pending' && !user.paymentRequestId)) && (
+                <button
+                  onClick={() => router.push('/payment')}
+                  className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Complete Payment
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
@@ -158,7 +176,9 @@ export default function EarningsPage() {
             </div>
             <div className="text-center sm:text-right">
               <div className="text-sm text-gray-500">Total Earnings</div>
-              <div className="text-2xl sm:text-3xl font-bold text-green-600">{totalEarnings} PKR</div>
+              <div className="text-2xl sm:text-3xl font-bold text-green-600">
+                {user.isActive && user.paymentStatus === 'approved' ? totalEarnings : '0'} PKR
+              </div>
             </div>
           </div>
         </div>
@@ -172,7 +192,9 @@ export default function EarningsPage() {
               </div>
               <div className="ml-2 sm:ml-4">
                 <p className="text-xs sm:text-sm font-medium text-gray-600">Pairs Completed</p>
-                <p className="text-lg sm:text-2xl font-bold text-gray-900">{user.pairsCompleted || 0}</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">
+                  {user.isActive && user.paymentStatus === 'approved' ? (user.pairsCompleted || 0) : '0'}
+                </p>
               </div>
             </div>
           </div>
@@ -184,7 +206,9 @@ export default function EarningsPage() {
               </div>
               <div className="ml-2 sm:ml-4">
                 <p className="text-xs sm:text-sm font-medium text-gray-600">Current Star Level</p>
-                <p className="text-lg sm:text-2xl font-bold text-gray-900">{user.starLevel || 0}</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">
+                  {user.isActive && user.paymentStatus === 'approved' ? (user.starLevel || 0) : '0'}
+                </p>
               </div>
             </div>
           </div>
@@ -197,9 +221,11 @@ export default function EarningsPage() {
               <div className="ml-2 sm:ml-4">
                 <p className="text-xs sm:text-sm font-medium text-gray-600">This Month</p>
                 <p className="text-lg sm:text-2xl font-bold text-gray-900">
-                  {earnings
-                    .filter(e => new Date(e.createdAt).getMonth() === new Date().getMonth())
-                    .reduce((sum, e) => sum + e.amount, 0)} PKR
+                  {user.isActive && user.paymentStatus === 'approved' 
+                    ? earnings
+                        .filter(e => new Date(e.createdAt).getMonth() === new Date().getMonth())
+                        .reduce((sum, e) => sum + e.amount, 0)
+                    : '0'} PKR
                 </p>
               </div>
             </div>

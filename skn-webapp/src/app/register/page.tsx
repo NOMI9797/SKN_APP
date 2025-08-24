@@ -109,11 +109,11 @@ function RegisterForm() {
       
       if (result.success) {
         // Registration successful and user is auto-logged in
-        console.log('Registration successful, redirecting to payment...');
+        console.log('Registration successful, redirecting to dashboard...');
         setIsSuccess(true);
         // Show success message for 2 seconds then redirect
         setTimeout(() => {
-          router.push('/payment');
+          router.push('/dashboard');
         }, 2000);
       } else {
         // Registration failed
@@ -164,7 +164,7 @@ function RegisterForm() {
                 </svg>
               </div>
               <h3 className="text-base sm:text-lg font-medium text-gray-900">Account Created Successfully!</h3>
-              <p className="text-gray-600 text-sm sm:text-base">Redirecting you to payment page...</p>
+              <p className="text-gray-600 text-sm sm:text-base">Redirecting you to dashboard...</p>
               <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto"></div>
             </div>
           ) : (
